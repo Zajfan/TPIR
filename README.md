@@ -8,6 +8,8 @@
 
 > **The Price is Right (TPIR)** is an open-source financial trading terminal for computer hardware and consumer electronics. Instead of trading stocks, users track **GPUs, CPUs, RAM, SSDs, HDDs, Servers, and Gaming Consoles** to know precisely when to enter the market and buy when the price is right.
 
+![TPIR Terminal Interface Preview](docs/preview.jpg)
+
 ---
 
 ## ⚡ Why TPIR?
