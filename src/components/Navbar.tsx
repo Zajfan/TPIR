@@ -169,7 +169,7 @@ export default function Navbar({
 
           {/* Open Source / Github Link */}
           <a
-            href="https://github.com"
+            href="https://github.com/Zajfan/TPIR"
             target="_blank"
             rel="noopener noreferrer"
             className="p-2 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:border-slate-700 transition-colors hidden sm:flex items-center"
