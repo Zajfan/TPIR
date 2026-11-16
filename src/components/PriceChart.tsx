@@ -4,7 +4,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   createChart,
   IChartApi,
-  ISeriesApi,
   ColorType,
   CandlestickData,
   LineData,
@@ -16,17 +15,25 @@ import {
   HistogramSeries,
   LineStyle,
 } from 'lightweight-charts';
-import { Product, Currency, TechnicalAnalysis } from '@/types';
+import { Product, Currency, TechnicalAnalysis, Timeframe } from '@/types';
 import { convertCurrency, formatPrice } from '@/lib/currency';
-import { TrendingUp, BarChart2, Activity } from 'lucide-react';
+import { TrendingUp, BarChart2, Activity, Clock } from 'lucide-react';
 
 interface PriceChartProps {
   product: Product;
   analysis: TechnicalAnalysis;
   currency: Currency;
+  timeframe: Timeframe;
+  onTimeframeChange: (tf: Timeframe) => void;
 }
 
-export default function PriceChart({ product, analysis, currency }: PriceChartProps) {
+export default function PriceChart({
+  product,
+  analysis,
+  currency,
+  timeframe,
+  onTimeframeChange,
+}: PriceChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
 
@@ -35,7 +42,6 @@ export default function PriceChart({ product, analysis, currency }: PriceChartPr
   const [showMSRP, setShowMSRP] = useState<boolean>(true);
   const [showForecast, setShowForecast] = useState<boolean>(true);
 
-  // Hovered candle info for custom legend
   const [hoveredData, setHoveredData] = useState<{
     time?: string;
     open?: number;
@@ -84,10 +90,22 @@ export default function PriceChart({ product, analysis, currency }: PriceChartPr
 
     chartRef.current = chart;
 
-    // Prepare converted candles
-    const history = product.history;
-    const convertedCandles: CandlestickData<Time>[] = history.map((c) => ({
-      time: c.time as Time,
+    // Choose dataset based on timeframe: intraday for 1H/24H, daily for larger
+    const isIntraday = timeframe === '1H' || timeframe === '24H';
+    const rawData = isIntraday
+      ? product.historyIntraday.slice(timeframe === '1H' ? -12 : -24)
+      : timeframe === '7D'
+      ? product.historyDaily.slice(-7)
+      : timeframe === '1M'
+      ? product.historyDaily.slice(-15)
+      : timeframe === '3M'
+      ? product.historyDaily.slice(-30)
+      : timeframe === '1Y'
+      ? product.historyDaily.slice(-60)
+      : product.historyDaily;
+
+    const convertedCandles: CandlestickData<Time>[] = rawData.map((c) => ({
+      time: (isIntraday ? Math.floor(new Date(c.time).getTime() / 1000) : c.time) as Time,
       open: convertCurrency(c.open, 'USD', currency),
       high: convertCurrency(c.high, 'USD', currency),
       low: convertCurrency(c.low, 'USD', currency),
@@ -98,7 +116,7 @@ export default function PriceChart({ product, analysis, currency }: PriceChartPr
     const volumeSeries = chart.addSeries(HistogramSeries, {
       color: '#26a69a',
       priceFormat: { type: 'volume' },
-      priceScaleId: '', // overlay
+      priceScaleId: '',
     });
     volumeSeries.priceScale().applyOptions({
       scaleMargins: {
@@ -107,8 +125,8 @@ export default function PriceChart({ product, analysis, currency }: PriceChartPr
       },
     });
 
-    const volumeData: HistogramData<Time>[] = history.map((c) => ({
-      time: c.time as Time,
+    const volumeData: HistogramData<Time>[] = rawData.map((c) => ({
+      time: (isIntraday ? Math.floor(new Date(c.time).getTime() / 1000) : c.time) as Time,
       value: c.volume,
       color: c.close >= c.open ? 'rgba(16, 185, 129, 0.28)' : 'rgba(239, 68, 68, 0.28)',
     }));
@@ -139,27 +157,28 @@ export default function PriceChart({ product, analysis, currency }: PriceChartPr
     }));
     areaSeries.setData(areaData);
 
-    // SMA-30 Line
-    const sma30Series = chart.addSeries(LineSeries, {
-      color: '#f59e0b',
-      lineWidth: 2,
-      title: 'SMA-30',
-      visible: showSMA,
-    });
+    // SMA-30 Line (for daily timeframes)
+    if (!isIntraday && showSMA) {
+      const sma30Series = chart.addSeries(LineSeries, {
+        color: '#f59e0b',
+        lineWidth: 2,
+        title: 'SMA-30',
+        visible: showSMA,
+      });
 
-    // Calculate rolling 30-period SMA
-    const sma30Data: LineData<Time>[] = [];
-    for (let i = 0; i < convertedCandles.length; i++) {
-      if (i >= 9) {
-        const windowSlice = convertedCandles.slice(Math.max(0, i - 9), i + 1);
-        const avg = windowSlice.reduce((sum, item) => sum + item.close, 0) / windowSlice.length;
-        sma30Data.push({
-          time: convertedCandles[i].time,
-          value: Math.round(avg * 100) / 100,
-        });
+      const sma30Data: LineData<Time>[] = [];
+      for (let i = 0; i < convertedCandles.length; i++) {
+        if (i >= 5) {
+          const windowSlice = convertedCandles.slice(Math.max(0, i - 5), i + 1);
+          const avg = windowSlice.reduce((sum, item) => sum + item.close, 0) / windowSlice.length;
+          sma30Data.push({
+            time: convertedCandles[i].time,
+            value: Math.round(avg * 100) / 100,
+          });
+        }
       }
+      sma30Series.setData(sma30Data);
     }
-    sma30Series.setData(sma30Data);
 
     // MSRP Price Line
     const msrpConverted = convertCurrency(product.msrpUSD, 'USD', currency);
@@ -185,8 +204,8 @@ export default function PriceChart({ product, analysis, currency }: PriceChartPr
       title: 'All-Time Low',
     });
 
-    // Prognosis Forecast Series (Extending into future)
-    if (showForecast && analysis.forecastPoints.length > 0) {
+    // Prognosis Forecast Series (for daily timeframes)
+    if (!isIntraday && showForecast && analysis.forecastPoints.length > 0) {
       const forecastSeries = chart.addSeries(LineSeries, {
         color: '#a855f7',
         lineWidth: 2,
@@ -224,9 +243,14 @@ export default function PriceChart({ product, analysis, currency }: PriceChartPr
         const vol = param.seriesData.get(volumeSeries) as HistogramData<Time> | undefined;
 
         if (candle) {
+          let timeDisplay = String(param.time);
+          if (typeof param.time === 'number') {
+            timeDisplay = new Date(param.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          }
+
           if ('open' in candle) {
             setHoveredData({
-              time: typeof param.time === 'string' ? param.time : undefined,
+              time: timeDisplay,
               open: candle.open,
               high: candle.high,
               low: candle.low,
@@ -235,7 +259,7 @@ export default function PriceChart({ product, analysis, currency }: PriceChartPr
             });
           } else {
             setHoveredData({
-              time: typeof param.time === 'string' ? param.time : undefined,
+              time: timeDisplay,
               close: candle.value,
               volume: vol?.value,
             });
@@ -246,7 +270,6 @@ export default function PriceChart({ product, analysis, currency }: PriceChartPr
 
     chart.timeScale().fitContent();
 
-    // Resize observer
     const handleResize = () => {
       if (chartContainerRef.current && chartRef.current) {
         chartRef.current.applyOptions({
@@ -262,22 +285,41 @@ export default function PriceChart({ product, analysis, currency }: PriceChartPr
       window.removeEventListener('resize', handleResize);
       chart.remove();
     };
-  }, [product, currency, chartType, showSMA, showMSRP, showForecast]);
+  }, [product, currency, chartType, showSMA, showMSRP, showForecast, timeframe]);
 
-  const latestCandle = product.history[product.history.length - 1];
   const atl = convertCurrency(analysis.allTimeLow.price, 'USD', currency);
   const ath = convertCurrency(analysis.allTimeHigh.price, 'USD', currency);
   const msrp = convertCurrency(product.msrpUSD, 'USD', currency);
+
+  const timeframes: Timeframe[] = ['1H', '24H', '7D', '1M', '3M', '1Y', 'ALL'];
 
   return (
     <div className="flex flex-col h-full bg-slate-900/90 border border-slate-800 rounded-xl overflow-hidden shadow-2xl backdrop-blur-md">
       {/* Chart Top Control Bar */}
       <div className="px-4 py-3 border-b border-slate-800/80 bg-slate-950/60 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Timeframe selector (1H to ALL) */}
+          <div className="flex bg-slate-900 border border-slate-700/60 rounded-lg p-0.5 font-mono">
+            {timeframes.map((tf) => (
+              <button
+                key={tf}
+                onClick={() => onTimeframeChange(tf)}
+                className={`px-2 py-0.5 text-xs font-semibold rounded transition-all ${
+                  timeframe === tf
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {tf}
+              </button>
+            ))}
+          </div>
+
+          {/* Candle vs Area */}
           <div className="flex bg-slate-900 border border-slate-700/60 rounded-lg p-0.5">
             <button
               onClick={() => setChartType('candlestick')}
-              className={`px-3 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1.5 ${
+              className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1.5 ${
                 chartType === 'candlestick'
                   ? 'bg-blue-600 text-white shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
@@ -288,53 +330,53 @@ export default function PriceChart({ product, analysis, currency }: PriceChartPr
             </button>
             <button
               onClick={() => setChartType('area')}
-              className={`px-3 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1.5 ${
+              className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1.5 ${
                 chartType === 'area'
                   ? 'bg-blue-600 text-white shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               <TrendingUp className="w-3.5 h-3.5" />
-              Line Area
+              Area
             </button>
           </div>
 
           {/* Indicator Toggles */}
-          <div className="flex items-center gap-2">
+          <div className="hidden sm:flex items-center gap-2">
             <button
               onClick={() => setShowSMA(!showSMA)}
-              className={`px-2.5 py-1 text-xs font-semibold rounded-md border transition-all flex items-center gap-1 ${
+              className={`px-2 py-0.5 text-[11px] font-semibold rounded-md border transition-all flex items-center gap-1 ${
                 showSMA
                   ? 'bg-amber-500/10 border-amber-500/40 text-amber-400'
-                  : 'bg-slate-900 border-slate-800 text-slate-500 hover:text-slate-400'
+                  : 'bg-slate-900 border-slate-800 text-slate-500'
               }`}
             >
-              <span className="w-2 h-2 rounded-full bg-amber-400" />
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
               SMA-30
             </button>
 
             <button
               onClick={() => setShowForecast(!showForecast)}
-              className={`px-2.5 py-1 text-xs font-semibold rounded-md border transition-all flex items-center gap-1 ${
+              className={`px-2 py-0.5 text-[11px] font-semibold rounded-md border transition-all flex items-center gap-1 ${
                 showForecast
                   ? 'bg-purple-500/10 border-purple-500/40 text-purple-400'
-                  : 'bg-slate-900 border-slate-800 text-slate-500 hover:text-slate-400'
+                  : 'bg-slate-900 border-slate-800 text-slate-500'
               }`}
             >
-              <span className="w-2 h-2 rounded-full bg-purple-400" />
-              Prognosis (30d)
+              <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+              Prognosis
             </button>
 
             <button
               onClick={() => setShowMSRP(!showMSRP)}
-              className={`px-2.5 py-1 text-xs font-semibold rounded-md border transition-all flex items-center gap-1 ${
+              className={`px-2 py-0.5 text-[11px] font-semibold rounded-md border transition-all flex items-center gap-1 ${
                 showMSRP
                   ? 'bg-cyan-500/10 border-cyan-500/40 text-cyan-400'
-                  : 'bg-slate-900 border-slate-800 text-slate-500 hover:text-slate-400'
+                  : 'bg-slate-900 border-slate-800 text-slate-500'
               }`}
             >
-              <span className="w-2 h-2 rounded-full bg-cyan-400" />
-              MSRP Baseline
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+              MSRP
             </button>
           </div>
         </div>
@@ -347,7 +389,7 @@ export default function PriceChart({ product, analysis, currency }: PriceChartPr
           <div className="text-slate-400">
             ATH: <span className="text-rose-400 font-semibold">{formatPrice(ath, currency)}</span>
           </div>
-          <div className="text-slate-400">
+          <div className="text-slate-400 hidden md:block">
             MSRP: <span className="text-cyan-400 font-semibold">{formatPrice(msrp, currency)}</span>
           </div>
         </div>
@@ -357,7 +399,7 @@ export default function PriceChart({ product, analysis, currency }: PriceChartPr
       <div className="px-4 py-1.5 bg-slate-950/40 border-b border-slate-800/40 text-xs font-mono flex items-center gap-5 text-slate-400 min-h-[30px]">
         {hoveredData ? (
           <>
-            <div>Date: <span className="text-slate-200">{hoveredData.time}</span></div>
+            <div>Date/Time: <span className="text-slate-200">{hoveredData.time}</span></div>
             {hoveredData.open !== undefined && (
               <div>O: <span className="text-slate-200">{formatPrice(hoveredData.open, currency)}</span></div>
             )}
@@ -380,7 +422,7 @@ export default function PriceChart({ product, analysis, currency }: PriceChartPr
         )}
       </div>
 
-      {/* The Actual Canvas Chart */}
+      {/* Canvas */}
       <div ref={chartContainerRef} className="flex-1 w-full min-h-[440px]" />
     </div>
   );

@@ -49,7 +49,7 @@ export default function MarketHeatmap({
 
   const analyzed = filtered.map((p) => {
     const analysis = analyzeProduct(p);
-    const history = p.history;
+    const history = p.historyDaily;
     const currentClose = history[history.length - 1]?.close || p.msrpUSD;
     const pastClose = history[Math.max(0, history.length - 10)]?.close || currentClose;
     const changePct = ((currentClose - pastClose) / pastClose) * 100;

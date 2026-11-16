@@ -1,7 +1,6 @@
 import { Product, PriceCandle } from '@/types';
 
 // Deterministic seeded pseudo-random number generator (Mulberry32)
-// to prevent SSR/Client hydration mismatches in Next.js
 function createPRNG(seed: number) {
   let a = seed;
   return function () {
@@ -12,19 +11,18 @@ function createPRNG(seed: number) {
   };
 }
 
-// Helper to generate deterministic realistic historical candlestick data
+// Generates deterministic daily/weekly candlestick history
 function generateHistoricalCandles(
   startDate: string,
   startPrice: number,
   points: number,
-  drift: number, // positive = upward, negative = downward
+  drift: number,
   volatility: number
 ): PriceCandle[] {
   const candles: PriceCandle[] = [];
   const current = new Date(startDate);
   let price = startPrice;
 
-  // Generate deterministic seed based on start date and price
   let seed = Math.round(startPrice * 100);
   for (let i = 0; i < startDate.length; i++) {
     seed = (seed * 31 + startDate.charCodeAt(i)) >>> 0;
@@ -50,7 +48,41 @@ function generateHistoricalCandles(
     });
 
     price = close;
-    current.setDate(current.getDate() + 3); // 3-day steps for smooth multi-month history
+    current.setDate(current.getDate() + 3);
+  }
+
+  return candles;
+}
+
+// Generates 24-48 hours of hour-by-hour intraday candles to show micro price wars
+function generateIntradayCandles(basePrice: number, points: number = 36): PriceCandle[] {
+  const candles: PriceCandle[] = [];
+  const now = new Date('2026-11-16T03:00:00Z');
+  const start = new Date(now.getTime() - points * 3600 * 1000);
+  let price = basePrice;
+
+  const random = createPRNG(Math.round(basePrice * 77));
+
+  for (let i = 0; i < points; i++) {
+    const changePct = (random() - 0.498) * 0.005; // tiny micro-flux
+    const open = price;
+    const close = Math.round(open * (1 + changePct) * 100) / 100;
+    const high = Math.round((Math.max(open, close) + random() * 0.5) * 100) / 100;
+    const low = Math.round((Math.min(open, close) - random() * 0.5) * 100) / 100;
+    const volume = Math.floor(4 + random() * 20);
+
+    const timeStr = start.toISOString().replace('T', ' ').substring(0, 16);
+    candles.push({
+      time: timeStr,
+      open,
+      high,
+      low,
+      close,
+      volume,
+    });
+
+    price = close;
+    start.setHours(start.getHours() + 1);
   }
 
   return candles;
@@ -77,6 +109,13 @@ export const PRODUCTS: Product[] = [
     msrpEUR: 1109,
     msrpSEK: 12490,
     releaseDate: '2024-01-31',
+    lifecycleStage: 'CLEARANCE',
+    powerWatts: 320,
+    performance: {
+      scoreType: 'FPS',
+      scoreValue: 112,
+      scoreLabel: '112 FPS @ 4K Ultra Rasterized',
+    },
     imageUrl: 'https://images.unsplash.com/photo-1587202372775-e229f172b9d7?auto=format&fit=crop&w=600&q=80',
     retailers: [
       {
@@ -90,6 +129,7 @@ export const PRODUCTS: Product[] = [
         currency: 'SEK',
         url: 'https://www.inet.se',
         lastUpdated: '12 min ago',
+        claimedDiscountPercent: 18,
       },
       {
         retailerId: 'webhallen',
@@ -114,6 +154,7 @@ export const PRODUCTS: Product[] = [
         currency: 'SEK',
         url: 'https://www.komplett.se',
         lastUpdated: '1 hour ago',
+        claimedDiscountPercent: 20,
       },
       {
         retailerId: 'proshop',
@@ -162,7 +203,8 @@ export const PRODUCTS: Product[] = [
         lastUpdated: '15 min ago',
       },
     ],
-    history: generateHistoricalCandles('2024-02-01', 1049, 90, -0.0006, 0.022),
+    historyDaily: generateHistoricalCandles('2024-02-01', 1049, 90, -0.0006, 0.022),
+    historyIntraday: generateIntradayCandles(989, 48),
   },
 
   {
@@ -184,6 +226,13 @@ export const PRODUCTS: Product[] = [
     msrpEUR: 1799,
     msrpSEK: 21990,
     releaseDate: '2022-10-12',
+    lifecycleStage: 'MATURE_PRODUCTION',
+    powerWatts: 450,
+    performance: {
+      scoreType: 'FPS',
+      scoreValue: 145,
+      scoreLabel: '145 FPS @ 4K Ultra Rasterized',
+    },
     imageUrl: 'https://images.unsplash.com/photo-1591488320449-011701bb6704?auto=format&fit=crop&w=600&q=80',
     retailers: [
       {
@@ -244,7 +293,8 @@ export const PRODUCTS: Product[] = [
         lastUpdated: '45 min ago',
       },
     ],
-    history: generateHistoricalCandles('2024-01-01', 1950, 95, 0.0003, 0.028),
+    historyDaily: generateHistoricalCandles('2024-01-01', 1950, 95, 0.0003, 0.028),
+    historyIntraday: generateIntradayCandles(1899, 48),
   },
 
   {
@@ -266,6 +316,13 @@ export const PRODUCTS: Product[] = [
     msrpEUR: 1099,
     msrpSEK: 12490,
     releaseDate: '2022-12-13',
+    lifecycleStage: 'PRICE_BOTTOM',
+    powerWatts: 355,
+    performance: {
+      scoreType: 'FPS',
+      scoreValue: 110,
+      scoreLabel: '110 FPS @ 4K Ultra Rasterized',
+    },
     imageUrl: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=600&q=80',
     retailers: [
       {
@@ -291,6 +348,7 @@ export const PRODUCTS: Product[] = [
         currency: 'SEK',
         url: 'https://www.komplett.se',
         lastUpdated: '12 min ago',
+        claimedDiscountPercent: 12,
       },
       {
         retailerId: 'proshop',
@@ -316,7 +374,8 @@ export const PRODUCTS: Product[] = [
         lastUpdated: '1 hour ago',
       },
     ],
-    history: generateHistoricalCandles('2024-01-01', 970, 95, -0.0007, 0.02),
+    historyDaily: generateHistoricalCandles('2024-01-01', 970, 95, -0.0007, 0.02),
+    historyIntraday: generateIntradayCandles(899, 48),
   },
 
   // --- CPUS ---
@@ -339,6 +398,13 @@ export const PRODUCTS: Product[] = [
     msrpEUR: 529,
     msrpSEK: 6190,
     releaseDate: '2024-11-07',
+    lifecycleStage: 'LAUNCH_SPIKE',
+    powerWatts: 120,
+    performance: {
+      scoreType: 'FPS',
+      scoreValue: 185,
+      scoreLabel: '185 FPS Gaming CPU Index (#1 Global)',
+    },
     imageUrl: 'https://images.unsplash.com/photo-1591799264318-7e6ef8ddb7ea?auto=format&fit=crop&w=600&q=80',
     retailers: [
       {
@@ -409,7 +475,8 @@ export const PRODUCTS: Product[] = [
         lastUpdated: '20 min ago',
       },
     ],
-    history: generateHistoricalCandles('2024-11-07', 599, 45, -0.0018, 0.024),
+    historyDaily: generateHistoricalCandles('2024-11-07', 599, 45, -0.0018, 0.024),
+    historyIntraday: generateIntradayCandles(519, 48),
   },
 
   {
@@ -431,6 +498,13 @@ export const PRODUCTS: Product[] = [
     msrpEUR: 489,
     msrpSEK: 5390,
     releaseDate: '2023-04-06',
+    lifecycleStage: 'PRICE_BOTTOM',
+    powerWatts: 120,
+    performance: {
+      scoreType: 'FPS',
+      scoreValue: 168,
+      scoreLabel: '168 FPS Gaming CPU Index',
+    },
     imageUrl: 'https://images.unsplash.com/photo-1555680202-c86f0e12f086?auto=format&fit=crop&w=600&q=80',
     retailers: [
       {
@@ -456,6 +530,7 @@ export const PRODUCTS: Product[] = [
         currency: 'SEK',
         url: 'https://www.komplett.se',
         lastUpdated: '1 hour ago',
+        claimedDiscountPercent: 15,
       },
       {
         retailerId: 'amazon-se',
@@ -470,7 +545,8 @@ export const PRODUCTS: Product[] = [
         lastUpdated: '40 min ago',
       },
     ],
-    history: generateHistoricalCandles('2024-01-01', 379, 90, 0.001, 0.03),
+    historyDaily: generateHistoricalCandles('2024-01-01', 379, 90, 0.001, 0.03),
+    historyIntraday: generateIntradayCandles(440, 48),
   },
 
   {
@@ -491,6 +567,13 @@ export const PRODUCTS: Product[] = [
     msrpEUR: 649,
     msrpSEK: 7490,
     releaseDate: '2024-10-24',
+    lifecycleStage: 'MATURE_PRODUCTION',
+    powerWatts: 250,
+    performance: {
+      scoreType: 'COMPUTE_TFLOPS',
+      scoreValue: 44,
+      scoreLabel: '44,200 Cinebench R23 Score',
+    },
     imageUrl: 'https://images.unsplash.com/photo-1591799264318-7e6ef8ddb7ea?auto=format&fit=crop&w=600&q=80',
     retailers: [
       {
@@ -518,7 +601,8 @@ export const PRODUCTS: Product[] = [
         lastUpdated: '50 min ago',
       },
     ],
-    history: generateHistoricalCandles('2024-10-24', 620, 50, -0.0012, 0.018),
+    historyDaily: generateHistoricalCandles('2024-10-24', 620, 50, -0.0012, 0.018),
+    historyIntraday: generateIntradayCandles(589, 48),
   },
 
   // --- RAM ---
@@ -540,6 +624,13 @@ export const PRODUCTS: Product[] = [
     msrpEUR: 139,
     msrpSEK: 1590,
     releaseDate: '2023-06-15',
+    lifecycleStage: 'PRICE_BOTTOM',
+    powerWatts: 15,
+    performance: {
+      scoreType: 'MB_PER_SEC',
+      scoreValue: 88500,
+      scoreLabel: '88.5 GB/s Read Throughput',
+    },
     imageUrl: 'https://images.unsplash.com/photo-1562976540-1502c2145186?auto=format&fit=crop&w=600&q=80',
     retailers: [
       {
@@ -579,7 +670,8 @@ export const PRODUCTS: Product[] = [
         lastUpdated: '10 min ago',
       },
     ],
-    history: generateHistoricalCandles('2024-01-01', 135, 95, -0.0008, 0.016),
+    historyDaily: generateHistoricalCandles('2024-01-01', 135, 95, -0.0008, 0.016),
+    historyIntraday: generateIntradayCandles(125, 48),
   },
 
   {
@@ -600,6 +692,13 @@ export const PRODUCTS: Product[] = [
     msrpEUR: 239,
     msrpSEK: 2790,
     releaseDate: '2023-09-01',
+    lifecycleStage: 'PRICE_BOTTOM',
+    powerWatts: 18,
+    performance: {
+      scoreType: 'MB_PER_SEC',
+      scoreValue: 91200,
+      scoreLabel: '91.2 GB/s Read Throughput',
+    },
     imageUrl: 'https://images.unsplash.com/photo-1541807084-5c52b6b3adef?auto=format&fit=crop&w=600&q=80',
     retailers: [
       {
@@ -627,7 +726,8 @@ export const PRODUCTS: Product[] = [
         lastUpdated: '40 min ago',
       },
     ],
-    history: generateHistoricalCandles('2024-01-01', 230, 90, -0.0005, 0.019),
+    historyDaily: generateHistoricalCandles('2024-01-01', 230, 90, -0.0005, 0.019),
+    historyIntraday: generateIntradayCandles(215, 48),
   },
 
   // --- SSDS & STORAGE ---
@@ -650,6 +750,13 @@ export const PRODUCTS: Product[] = [
     msrpEUR: 199,
     msrpSEK: 2290,
     releaseDate: '2022-10-18',
+    lifecycleStage: 'PRICE_BOTTOM',
+    powerWatts: 8,
+    performance: {
+      scoreType: 'MB_PER_SEC',
+      scoreValue: 7450,
+      scoreLabel: '7,450 MB/s Seq. Read Speed',
+    },
     imageUrl: 'https://images.unsplash.com/photo-1597872200969-2b65d56bd16b?auto=format&fit=crop&w=600&q=80',
     retailers: [
       {
@@ -675,6 +782,7 @@ export const PRODUCTS: Product[] = [
         currency: 'SEK',
         url: 'https://www.komplett.se',
         lastUpdated: '25 min ago',
+        claimedDiscountPercent: 22,
       },
       {
         retailerId: 'amazon-se',
@@ -700,7 +808,8 @@ export const PRODUCTS: Product[] = [
         lastUpdated: '1 hour ago',
       },
     ],
-    history: generateHistoricalCandles('2024-01-01', 195, 95, -0.0006, 0.022),
+    historyDaily: generateHistoricalCandles('2024-01-01', 195, 95, -0.0006, 0.022),
+    historyIntraday: generateIntradayCandles(169, 48),
   },
 
   {
@@ -721,6 +830,13 @@ export const PRODUCTS: Product[] = [
     msrpEUR: 339,
     msrpSEK: 3990,
     releaseDate: '2024-03-12',
+    lifecycleStage: 'MATURE_PRODUCTION',
+    powerWatts: 12,
+    performance: {
+      scoreType: 'MB_PER_SEC',
+      scoreValue: 14500,
+      scoreLabel: '14,500 MB/s Gen5 Flagship Speed',
+    },
     imageUrl: 'https://images.unsplash.com/photo-1597872200969-2b65d56bd16b?auto=format&fit=crop&w=600&q=80',
     retailers: [
       {
@@ -748,7 +864,8 @@ export const PRODUCTS: Product[] = [
         lastUpdated: '45 min ago',
       },
     ],
-    history: generateHistoricalCandles('2024-03-15', 335, 80, -0.0011, 0.02),
+    historyDaily: generateHistoricalCandles('2024-03-15', 335, 80, -0.0011, 0.02),
+    historyIntraday: generateIntradayCandles(299, 48),
   },
 
   // --- CONSOLES ---
@@ -770,6 +887,13 @@ export const PRODUCTS: Product[] = [
     msrpEUR: 799,
     msrpSEK: 10490,
     releaseDate: '2024-11-07',
+    lifecycleStage: 'LAUNCH_SPIKE',
+    powerWatts: 240,
+    performance: {
+      scoreType: 'COMPUTE_TFLOPS',
+      scoreValue: 16.7,
+      scoreLabel: '16.7 TFLOPS + PSSR AI Engine',
+    },
     imageUrl: 'https://images.unsplash.com/photo-1606813907291-d86efa9b94db?auto=format&fit=crop&w=600&q=80',
     retailers: [
       {
@@ -832,7 +956,8 @@ export const PRODUCTS: Product[] = [
         lastUpdated: '35 min ago',
       },
     ],
-    history: generateHistoricalCandles('2024-11-07', 720, 45, -0.0012, 0.015),
+    historyDaily: generateHistoricalCandles('2024-11-07', 720, 45, -0.0012, 0.015),
+    historyIntraday: generateIntradayCandles(699, 48),
   },
 
   {
@@ -852,6 +977,13 @@ export const PRODUCTS: Product[] = [
     msrpEUR: 549,
     msrpSEK: 6490,
     releaseDate: '2020-11-10',
+    lifecycleStage: 'PRICE_BOTTOM',
+    powerWatts: 200,
+    performance: {
+      scoreType: 'COMPUTE_TFLOPS',
+      scoreValue: 12.1,
+      scoreLabel: '12.1 TFLOPS RDNA 2',
+    },
     imageUrl: 'https://images.unsplash.com/photo-1621259182978-fbf93132d53d?auto=format&fit=crop&w=600&q=80',
     retailers: [
       {
@@ -877,9 +1009,11 @@ export const PRODUCTS: Product[] = [
         currency: 'SEK',
         url: 'https://www.komplett.se',
         lastUpdated: '1 hour ago',
+        claimedDiscountPercent: 12,
       },
     ],
-    history: generateHistoricalCandles('2024-01-01', 490, 95, -0.0004, 0.014),
+    historyDaily: generateHistoricalCandles('2024-01-01', 490, 95, -0.0004, 0.014),
+    historyIntraday: generateIntradayCandles(479, 48),
   },
 
   // --- SERVERS & ENTERPRISE ---
@@ -901,6 +1035,13 @@ export const PRODUCTS: Product[] = [
     msrpEUR: 1299,
     msrpSEK: 14990,
     releaseDate: '2022-04-01',
+    lifecycleStage: 'MATURE_PRODUCTION',
+    powerWatts: 300,
+    performance: {
+      scoreType: 'GENERAL',
+      scoreValue: 88,
+      scoreLabel: 'Enterprise Xeon ECC Reliability',
+    },
     imageUrl: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=600&q=80',
     retailers: [
       {
@@ -928,7 +1069,8 @@ export const PRODUCTS: Product[] = [
         lastUpdated: '3 hours ago',
       },
     ],
-    history: generateHistoricalCandles('2024-01-01', 1250, 90, -0.0003, 0.01),
+    historyDaily: generateHistoricalCandles('2024-01-01', 1250, 90, -0.0003, 0.01),
+    historyIntraday: generateIntradayCandles(1199, 48),
   },
 
   {
@@ -949,6 +1091,13 @@ export const PRODUCTS: Product[] = [
     msrpEUR: 369,
     msrpSEK: 4190,
     releaseDate: '2022-01-15',
+    lifecycleStage: 'PRICE_BOTTOM',
+    powerWatts: 7.6,
+    performance: {
+      scoreType: 'MB_PER_SEC',
+      scoreValue: 270,
+      scoreLabel: '270 MB/s Sustained Transfer Rate',
+    },
     imageUrl: 'https://images.unsplash.com/photo-1531492746076-161ca9bcad58?auto=format&fit=crop&w=600&q=80',
     retailers: [
       {
@@ -988,6 +1137,7 @@ export const PRODUCTS: Product[] = [
         lastUpdated: '1 hour ago',
       },
     ],
-    history: generateHistoricalCandles('2024-01-01', 340, 95, -0.0005, 0.015),
+    historyDaily: generateHistoricalCandles('2024-01-01', 340, 95, -0.0005, 0.015),
+    historyIntraday: generateIntradayCandles(329, 48),
   },
 ];

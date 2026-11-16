@@ -1,4 +1,4 @@
-import { Product, TechnicalAnalysis, PrognosisPoint, PriceCandle } from '@/types';
+import { Product, TechnicalAnalysis, PrognosisPoint, PriceCandle, TruthIndexAnalysis } from '@/types';
 
 /**
  * Calculates Simple Moving Average for a given period
@@ -12,7 +12,6 @@ function calculateSMA(candles: PriceCandle[], period: number): number {
 
 /**
  * Calculates a Hardware Relative Value Index (RVI) - adapted from 14-period RSI
- * but calibrated for hardware pricing where lower price = better value (oversold = high buy value)
  */
 function calculateRVI(candles: PriceCandle[]): number {
   if (candles.length < 15) return 50;
@@ -40,10 +39,62 @@ function calculateRVI(candles: PriceCandle[]): number {
 }
 
 /**
- * Analyzes a product's price history and calculates technical indicators, deal score, and 30-day forecast.
+ * Analyzes whether recent discounts are genuine or artificially inflated ("Fake Discount Radar")
+ */
+function evaluateTruthIndex(product: Product, currentPrice: number, history: PriceCandle[]): TruthIndexAnalysis {
+  if (history.length < 20) {
+    return {
+      isFakeDiscount: false,
+      claimedDiscountPercent: 0,
+      realDiscountPercent: 0,
+      preSaleInflationPercent: 0,
+      verdict: 'Insufficient price history to detect pre-sale inflation.',
+      historicalMedianPrice: currentPrice,
+    };
+  }
+
+  // Calculate 90-day median price
+  const recentSlice = history.slice(-30);
+  const sortedCloses = [...recentSlice].map((c) => c.close).sort((a, b) => a - b);
+  const medianPrice = sortedCloses[Math.floor(sortedCloses.length / 2)] || currentPrice;
+
+  // Detect peak price in the 15-45 days window prior to current date
+  const preSaleWindow = history.slice(Math.max(0, history.length - 25), Math.max(1, history.length - 5));
+  const preSalePeak = Math.max(...preSaleWindow.map((c) => c.high), medianPrice);
+
+  // Check if any retailer is claiming a discount
+  const maxClaimedDiscount = Math.max(...product.retailers.map((r) => r.claimedDiscountPercent || 0), 0);
+
+  // Pre-sale inflation: did the price spike > 8% above the 90d median before this "sale"?
+  const preSaleInflationPct = Math.max(0, Math.round(((preSalePeak - medianPrice) / medianPrice) * 100));
+  const realDiscountPct = Math.round(((medianPrice - currentPrice) / medianPrice) * 100);
+
+  const isFakeDiscount = maxClaimedDiscount > 10 && preSaleInflationPct >= 7 && realDiscountPct < 5;
+
+  let verdict = 'Fair & transparent market pricing.';
+  if (isFakeDiscount) {
+    verdict = `FAKE DISCOUNT DETECTED: Retailer claims ${maxClaimedDiscount}% off, but raised the price by +${preSaleInflationPct}% prior to the promo. Real discount vs 90d median is only ${realDiscountPct}%.`;
+  } else if (realDiscountPct >= 10) {
+    verdict = `GENUINE DISCOUNT: Current price is ${realDiscountPct}% below the true 90-day median historical price.`;
+  } else if (currentPrice < product.msrpUSD) {
+    verdict = `Trading ${Math.round(((product.msrpUSD - currentPrice) / product.msrpUSD) * 100)}% below official MSRP baseline.`;
+  }
+
+  return {
+    isFakeDiscount,
+    claimedDiscountPercent: maxClaimedDiscount,
+    realDiscountPercent: realDiscountPct,
+    preSaleInflationPercent: preSaleInflationPct,
+    verdict,
+    historicalMedianPrice: Math.round(medianPrice),
+  };
+}
+
+/**
+ * Analyzes a product's price history and calculates technical indicators, deal score, truth index, and 30-day forecast.
  */
 export function analyzeProduct(product: Product): TechnicalAnalysis {
-  const history = product.history;
+  const history = product.historyDaily;
   if (!history || history.length === 0) {
     return {
       dealScore: 50,
@@ -59,6 +110,14 @@ export function analyzeProduct(product: Product): TechnicalAnalysis {
       recommendationReason: 'Insufficient historical data.',
       marketCycleNote: 'Monitoring price changes across retailers.',
       forecastPoints: [],
+      truthIndex: {
+        isFakeDiscount: false,
+        claimedDiscountPercent: 0,
+        realDiscountPercent: 0,
+        preSaleInflationPercent: 0,
+        verdict: 'Monitoring real market quotes.',
+        historicalMedianPrice: product.msrpUSD,
+      },
     };
   }
 
@@ -93,22 +152,17 @@ export function analyzeProduct(product: Product): TechnicalAnalysis {
   if (diffPct14d < -2.0) trend = 'dropping';
   else if (diffPct14d > 2.0) trend = 'rising';
 
-  // Fair Value computation (combination of MSRP, 90d SMA, and age discount factor)
+  // Fair Value computation
   const msrp = product.msrpUSD;
   const fairValue = Math.round(Math.min(msrp, (sma90 * 0.6 + msrp * 0.4)));
 
   // Deal Score Calculation (0 to 100)
-  // Factors:
-  // 1. Discount vs MSRP (max 40 pts)
-  // 2. Proximity to All-Time-Low (max 35 pts)
-  // 3. Momentum & RVI (max 25 pts)
-  const msrpRatio = (msrp - currentPrice) / msrp; // e.g. +0.15 if 15% below MSRP, -0.20 if 20% over MSRP
+  const msrpRatio = (msrp - currentPrice) / msrp;
   const msrpPoints = Math.min(40, Math.max(0, 20 + msrpRatio * 80));
 
-  const atlSpread = (currentPrice - atl) / atl; // 0 = exactly at ATL
+  const atlSpread = (currentPrice - atl) / atl;
   const atlPoints = Math.min(35, Math.max(0, 35 - atlSpread * 70));
 
-  // RVI: when RVI is low (30), price has plunged -> high buy opportunity
   const rviPoints = Math.min(25, Math.max(0, (100 - rvi) * 0.25));
 
   let dealScore = Math.round(msrpPoints + atlPoints + rviPoints);
@@ -121,7 +175,7 @@ export function analyzeProduct(product: Product): TechnicalAnalysis {
   else if (dealScore >= 25) rating = 'OVERPRICED';
   else rating = 'DON_T_BUY';
 
-  // 30-day Forecast Projection using recent slope + mean-reversion
+  // 30-day Forecast Projection
   const recentWindow = history.slice(-30);
   let slope = 0;
   if (recentWindow.length >= 2) {
@@ -136,7 +190,6 @@ export function analyzeProduct(product: Product): TechnicalAnalysis {
     slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
   }
 
-  // Damped slope towards fair value
   const forecastPoints: PrognosisPoint[] = [];
   const lastDate = new Date(history[history.length - 1].time);
   let projectedPrice = currentPrice;
@@ -147,9 +200,7 @@ export function analyzeProduct(product: Product): TechnicalAnalysis {
     fDate.setDate(fDate.getDate() + day);
     const dateStr = fDate.toISOString().split('T')[0];
 
-    // Damped trend + reversion
     projectedPrice = projectedPrice + (slope * 0.6) + dailyTargetPull;
-    // Keep within reasonable limits
     projectedPrice = Math.max(atl * 0.95, Math.min(ath * 1.05, projectedPrice));
 
     const volatilitySpread = (projectedPrice * 0.02) + (day * 0.5);
@@ -165,26 +216,43 @@ export function analyzeProduct(product: Product): TechnicalAnalysis {
   const finalForecastPrice = forecastPoints[forecastPoints.length - 1]?.projectedPrice || currentPrice;
   const forecastedChange30dPct = Math.round(((finalForecastPrice - currentPrice) / currentPrice) * 1000) / 10;
 
-  // Reasoning synthesis
+  // Lifecycle & recommendation notes
   let recommendationReason = '';
   let marketCycleNote = '';
 
+  switch (product.lifecycleStage) {
+    case 'CLEARANCE':
+      marketCycleNote = 'Clearance Phase: Generation phase-out ahead of new architecture. Deepest pricing window.';
+      break;
+    case 'PRICE_BOTTOM':
+      marketCycleNote = 'Maturity Floor: Product has reached historical production economies of scale; optimal buy zone.';
+      break;
+    case 'LAUNCH_SPIKE':
+      marketCycleNote = 'Launch Window: High enthusiast demand and initial inventory scalping. Waiting 4-6 weeks recommended.';
+      break;
+    case 'MATURE_PRODUCTION':
+      marketCycleNote = 'Stable Production: Healthy inventory and active retailer competition.';
+      break;
+    case 'END_OF_LIFE':
+      marketCycleNote = 'End-of-Life: Production halted. New units may be scarce; check secondary/refurbished options.';
+      break;
+    default:
+      marketCycleNote = 'Active Market Flow: Consistent volume across Swedish & Global channels.';
+  }
+
   if (rating === 'STRONG_BUY') {
     recommendationReason = `Exceptional entry point. Current price is within ${Math.round(atlSpread * 100)}% of the all-time record low and discounted vs MSRP. Technical indicators confirm support bounce.`;
-    marketCycleNote = 'Inventory clearing before next hardware generation; strong value window.';
   } else if (rating === 'GOOD_DEAL') {
     recommendationReason = `Solid buying window. Price is trending below 90-day moving average (${Math.round(sma90)}) with stable stock availability across Swedish and EU vendors.`;
-    marketCycleNote = 'Retailer competition driving modest discounts.';
   } else if (rating === 'FAIR_PRICE') {
     recommendationReason = 'Trading near historical median. If you need it right now, price is reasonable, but setting a limit alert for seasonal sales could save 8-12%.';
-    marketCycleNote = 'Supply and demand in equilibrium.';
   } else if (rating === 'OVERPRICED') {
     recommendationReason = `Trading ${Math.round(((currentPrice - msrp) / msrp) * 100)}% above official launch MSRP or historical average. Prognosis projects downward price correction over the next 30 days.`;
-    marketCycleNote = 'Artificial supply constraint or post-launch markup.';
   } else {
     recommendationReason = 'Do not buy at current levels. High scalper markup or severe supply deficit. A steep price drop is projected.';
-    marketCycleNote = 'Severe overbought territory; avoid FOMO purchasing.';
   }
+
+  const truthIndex = evaluateTruthIndex(product, currentPrice, history);
 
   return {
     dealScore,
@@ -202,11 +270,12 @@ export function analyzeProduct(product: Product): TechnicalAnalysis {
     allTimeHigh: {
       price: ath,
       date: athDate,
-      retailer: 'Scalper / Launch Peak',
+      retailer: 'Launch Peak / Scalp',
     },
     fairValuePrice: fairValue,
     recommendationReason,
     marketCycleNote,
     forecastPoints,
+    truthIndex,
   };
 }

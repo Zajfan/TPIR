@@ -27,7 +27,7 @@ export default function MarketTicker({
 
       <div className="flex items-center gap-4 shrink-0">
         {products.map((p) => {
-          const history = p.history;
+          const history = p.historyDaily;
           const currentClose = history[history.length - 1]?.close || p.msrpUSD;
           const prevClose = history[history.length - 2]?.close || currentClose;
           const changePct = ((currentClose - prevClose) / prevClose) * 100;

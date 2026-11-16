@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { Product, Currency, TechnicalAnalysis, PriceAlert } from '@/types';
 import { convertCurrency, formatPrice, formatPercent } from '@/lib/currency';
+import TruthIndexBadge from '@/components/TruthIndexBadge';
 import {
   TrendingDown,
   TrendingUp,
@@ -13,6 +14,8 @@ import {
   Zap,
   Target,
   Info,
+  FolderPlus,
+  Layers,
 } from 'lucide-react';
 
 interface PrognosisCardProps {
@@ -21,6 +24,7 @@ interface PrognosisCardProps {
   currency: Currency;
   onAddAlert: (alert: Omit<PriceAlert, 'id' | 'createdAt' | 'triggered'>) => void;
   activeAlerts: PriceAlert[];
+  onAddToPortfolio: (product: Product) => void;
 }
 
 export default function PrognosisCard({
@@ -29,15 +33,16 @@ export default function PrognosisCard({
   currency,
   onAddAlert,
   activeAlerts,
+  onAddToPortfolio,
 }: PrognosisCardProps) {
-  const currentPriceUSD = product.history[product.history.length - 1]?.close || product.msrpUSD;
+  const currentPriceUSD = product.historyDaily[product.historyDaily.length - 1]?.close || product.msrpUSD;
   const currentPrice = convertCurrency(currentPriceUSD, 'USD', currency);
   const fairValue = convertCurrency(analysis.fairValuePrice, 'USD', currency);
 
-  // Target Buy Alert State
   const defaultTarget = Math.round(currentPrice * 0.92);
   const [targetInput, setTargetInput] = useState<number>(defaultTarget);
   const [alertSaved, setAlertSaved] = useState<boolean>(false);
+  const [portfolioAdded, setPortfolioAdded] = useState<boolean>(false);
 
   const existingAlert = activeAlerts.find(
     (a) => a.productId === product.id && a.targetCurrency === currency
@@ -58,7 +63,12 @@ export default function PrognosisCard({
     setTimeout(() => setAlertSaved(false), 2500);
   };
 
-  // Color mapping based on rating
+  const handleAddToList = () => {
+    onAddToPortfolio(product);
+    setPortfolioAdded(true);
+    setTimeout(() => setPortfolioAdded(false), 2000);
+  };
+
   const getRatingBadge = () => {
     switch (analysis.rating) {
       case 'STRONG_BUY':
@@ -112,11 +122,16 @@ export default function PrognosisCard({
             AI Market Prognosis & Signals
           </h3>
         </div>
-        <div className={`px-2.5 py-1 text-xs font-mono font-bold rounded-md border flex items-center gap-1.5 ${badge.bg}`}>
-          {badge.icon}
-          {badge.label}
+        <div className="flex items-center gap-2">
+          <div className={`px-2.5 py-1 text-xs font-mono font-bold rounded-md border flex items-center gap-1.5 ${badge.bg}`}>
+            {badge.icon}
+            {badge.label}
+          </div>
         </div>
       </div>
+
+      {/* Truth Index Fake Discount Warning (if applicable) */}
+      <TruthIndexBadge truthIndex={analysis.truthIndex} currency={currency} />
 
       {/* Deal Score Gauge Bar */}
       <div className="flex flex-col gap-2">
@@ -192,19 +207,20 @@ export default function PrognosisCard({
         </div>
       </div>
 
-      {/* Target Price Alert ("Limit Buy Order") */}
-      <div className="mt-1 pt-3 border-t border-slate-800">
-        <div className="flex items-center justify-between mb-2">
+      {/* Action Row: Limit Buy Order & Add to Portfolio */}
+      <div className="mt-1 pt-3 border-t border-slate-800 flex flex-col gap-3">
+        <div className="flex items-center justify-between">
           <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5 font-mono">
             <Target className="w-3.5 h-3.5 text-blue-400" />
             TARGET BUY TRIGGER ("LIMIT ORDER")
           </span>
-          {existingAlert && (
-            <span className="text-[11px] text-emerald-400 font-mono flex items-center gap-1">
-              <CheckCircle2 className="w-3 h-3" />
-              Active: {formatPrice(existingAlert.targetPrice, currency)}
-            </span>
-          )}
+          <button
+            onClick={handleAddToList}
+            className="px-2.5 py-1 rounded bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 text-indigo-300 text-[11px] font-mono flex items-center gap-1 transition-colors"
+          >
+            <FolderPlus className="w-3 h-3" />
+            {portfolioAdded ? 'Added to List!' : 'Add to Portfolio'}
+          </button>
         </div>
 
         <form onSubmit={handleSetAlert} className="flex gap-2">
@@ -225,9 +241,6 @@ export default function PrognosisCard({
             {alertSaved ? 'Saved!' : 'Set Trigger'}
           </button>
         </form>
-        <p className="text-[10px] text-slate-500 mt-1.5">
-          Trigger notifies you instantly when any Swedish or global retailer drops to or below this price.
-        </p>
       </div>
     </div>
   );

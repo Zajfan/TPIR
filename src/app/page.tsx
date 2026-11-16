@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { PRODUCTS } from '@/lib/catalog';
 import { analyzeProduct } from '@/lib/prognosis';
-import { Currency, Product, PriceAlert } from '@/types';
+import { Currency, Product, PriceAlert, WatchlistPortfolio, Timeframe } from '@/types';
 import { convertCurrency, formatPrice, formatPercent } from '@/lib/currency';
 import Navbar from '@/components/Navbar';
 import MarketTicker from '@/components/MarketTicker';
@@ -12,25 +12,63 @@ import PrognosisCard from '@/components/PrognosisCard';
 import RetailerOrderbook from '@/components/RetailerOrderbook';
 import MarketHeatmap from '@/components/MarketHeatmap';
 import AlertsModal from '@/components/AlertsModal';
+import CompareModal from '@/components/CompareModal';
+import PortfolioDrawer from '@/components/PortfolioDrawer';
+import EnterpriseTCOCard from '@/components/EnterpriseTCOCard';
 import {
   TrendingDown,
   TrendingUp,
-  Sliders,
   Cpu,
   Layers,
   ShoppingBag,
   ExternalLink,
   ShieldCheck,
   Zap,
+  Swords,
+  Clock,
+  Sparkles,
 } from 'lucide-react';
+
+const INITIAL_PORTFOLIOS: WatchlistPortfolio[] = [
+  {
+    id: 'portfolio-dream-4k-rig',
+    name: 'Dream 4K Gaming Rig',
+    description: 'Ultra-tier 4K gaming build with top value components',
+    categoryIcon: 'rig',
+    createdAt: '2026-11-15',
+    items: [
+      { productId: 'gpu-rtx-4080-super', quantity: 1 },
+      { productId: 'cpu-ryzen-7-9800x3d', quantity: 1 },
+      { productId: 'ram-corsair-vengeance-ddr5-32gb', quantity: 1 },
+      { productId: 'ssd-samsung-990-pro-2tb', quantity: 1 },
+    ],
+  },
+  {
+    id: 'portfolio-homelab',
+    name: 'Homelab & Storage Cluster',
+    description: 'Proxmox hypervisor & 16TB NAS setup',
+    categoryIcon: 'server',
+    createdAt: '2026-11-15',
+    items: [
+      { productId: 'server-dell-poweredge-t150', quantity: 1 },
+      { productId: 'hdd-seagate-ironwolf-pro-16tb', quantity: 2 },
+    ],
+  },
+];
 
 export default function Home() {
   const [currency, setCurrency] = useState<Currency>('SEK');
   const [selectedProduct, setSelectedProduct] = useState<Product>(PRODUCTS[0]);
+  const [timeframe, setTimeframe] = useState<Timeframe>('ALL');
   const [alerts, setAlerts] = useState<PriceAlert[]>([]);
-  const [isAlertsOpen, setIsAlertsOpen] = useState<boolean>(false);
+  const [portfolios, setPortfolios] = useState<WatchlistPortfolio[]>(INITIAL_PORTFOLIOS);
+  const [activePortfolioId, setActivePortfolioId] = useState<string>(INITIAL_PORTFOLIOS[0].id);
 
-  // Load saved alerts and currency preference from localStorage on mount
+  // Modals state
+  const [isAlertsOpen, setIsAlertsOpen] = useState<boolean>(false);
+  const [isCompareOpen, setIsCompareOpen] = useState<boolean>(false);
+  const [isPortfoliosOpen, setIsPortfoliosOpen] = useState<boolean>(false);
+
   useEffect(() => {
     try {
       const savedCurrency = localStorage.getItem('tpir_currency') as Currency;
@@ -41,6 +79,11 @@ export default function Home() {
       const savedAlerts = localStorage.getItem('tpir_alerts');
       if (savedAlerts) {
         setAlerts(JSON.parse(savedAlerts));
+      }
+
+      const savedPortfolios = localStorage.getItem('tpir_portfolios');
+      if (savedPortfolios) {
+        setPortfolios(JSON.parse(savedPortfolios));
       }
     } catch (e) {
       console.error('Error reading localStorage', e);
@@ -76,10 +119,67 @@ export default function Home() {
     } catch (e) {}
   };
 
-  // Run technical analysis on selected product
+  const handleCreatePortfolio = (name: string, description: string) => {
+    const newP: WatchlistPortfolio = {
+      id: `portfolio-${Date.now()}`,
+      name,
+      description,
+      categoryIcon: 'custom',
+      createdAt: new Date().toLocaleDateString('sv-SE'),
+      items: [{ productId: selectedProduct.id, quantity: 1 }],
+    };
+    const updated = [...portfolios, newP];
+    setPortfolios(updated);
+    setActivePortfolioId(newP.id);
+    try {
+      localStorage.setItem('tpir_portfolios', JSON.stringify(updated));
+    } catch (e) {}
+  };
+
+  const handleAddToPortfolio = (product: Product) => {
+    const updated = portfolios.map((p) => {
+      if (p.id === activePortfolioId) {
+        const exists = p.items.find((i) => i.productId === product.id);
+        if (exists) {
+          return {
+            ...p,
+            items: p.items.map((i) =>
+              i.productId === product.id ? { ...i, quantity: i.quantity + 1 } : i
+            ),
+          };
+        }
+        return {
+          ...p,
+          items: [...p.items, { productId: product.id, quantity: 1 }],
+        };
+      }
+      return p;
+    });
+    setPortfolios(updated);
+    try {
+      localStorage.setItem('tpir_portfolios', JSON.stringify(updated));
+    } catch (e) {}
+  };
+
+  const handleRemoveItemFromPortfolio = (portfolioId: string, productId: string) => {
+    const updated = portfolios.map((p) => {
+      if (p.id === portfolioId) {
+        return {
+          ...p,
+          items: p.items.filter((i) => i.productId !== productId),
+        };
+      }
+      return p;
+    });
+    setPortfolios(updated);
+    try {
+      localStorage.setItem('tpir_portfolios', JSON.stringify(updated));
+    } catch (e) {}
+  };
+
   const analysis = analyzeProduct(selectedProduct);
 
-  const history = selectedProduct.history;
+  const history = selectedProduct.historyDaily;
   const latestCloseUSD = history[history.length - 1]?.close || selectedProduct.msrpUSD;
   const prevCloseUSD = history[Math.max(0, history.length - 2)]?.close || latestCloseUSD;
   const dayChangePct = ((latestCloseUSD - prevCloseUSD) / prevCloseUSD) * 100;
@@ -88,13 +188,25 @@ export default function Home() {
   const msrp = convertCurrency(selectedProduct.msrpUSD, 'USD', currency);
   const msrpDiffPct = Math.round(((currentPrice - msrp) / msrp) * 100);
 
-  // Lowest available price among in-stock retailers
   const inStockRetailers = selectedProduct.retailers.filter((r) => r.inStock);
   const lowestRetailer = [...inStockRetailers].sort(
     (a, b) =>
       convertCurrency(a.price, a.currency, currency) -
       convertCurrency(b.price, b.currency, currency)
   )[0] || selectedProduct.retailers[0];
+
+  const getLifecycleColor = (stage: string) => {
+    switch (stage) {
+      case 'CLEARANCE':
+        return 'bg-purple-500/20 text-purple-300 border-purple-500/40';
+      case 'PRICE_BOTTOM':
+        return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
+      case 'LAUNCH_SPIKE':
+        return 'bg-amber-500/20 text-amber-300 border-amber-500/40';
+      default:
+        return 'bg-blue-500/20 text-blue-300 border-blue-500/40';
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col font-sans">
@@ -106,6 +218,9 @@ export default function Home() {
         onSelectProduct={setSelectedProduct}
         alerts={alerts}
         onOpenAlerts={() => setIsAlertsOpen(true)}
+        onOpenCompare={() => setIsCompareOpen(true)}
+        onOpenPortfolios={() => setIsPortfoliosOpen(true)}
+        portfolioCount={portfolios.length}
       />
 
       {/* Marquee Ticker */}
@@ -130,9 +245,12 @@ export default function Home() {
               />
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="px-2 py-0.5 rounded text-[10px] font-mono uppercase font-bold bg-blue-500/10 text-blue-400 border border-blue-500/30">
                   {selectedProduct.category}
+                </span>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase font-bold border ${getLifecycleColor(selectedProduct.lifecycleStage)}`}>
+                  {selectedProduct.lifecycleStage.replace('_', ' ')}
                 </span>
                 <span className="text-xs font-mono text-slate-400">
                   {selectedProduct.brand} • Released {selectedProduct.releaseDate}
@@ -205,12 +323,14 @@ export default function Home() {
 
         {/* 2-Column Bloomberg/TradingView Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* Main Chart Column (7 or 8 cols) */}
+          {/* Main Chart Column (8 cols) */}
           <div className="lg:col-span-8 flex flex-col gap-6">
             <PriceChart
               product={selectedProduct}
               analysis={analysis}
               currency={currency}
+              timeframe={timeframe}
+              onTimeframeChange={setTimeframe}
             />
 
             <PrognosisCard
@@ -219,6 +339,7 @@ export default function Home() {
               currency={currency}
               onAddAlert={handleAddAlert}
               activeAlerts={alerts}
+              onAddToPortfolio={handleAddToPortfolio}
             />
           </div>
 
@@ -227,6 +348,13 @@ export default function Home() {
             <RetailerOrderbook
               product={selectedProduct}
               currency={currency}
+            />
+
+            {/* Enterprise & Gamer TCO Power Calculator */}
+            <EnterpriseTCOCard
+              product={selectedProduct}
+              currency={currency}
+              hardwarePrice={currentPrice}
             />
 
             {/* Hardware Specification Card */}
@@ -273,7 +401,7 @@ export default function Home() {
         </section>
       </main>
 
-      {/* Price Alerts Modal */}
+      {/* Modals & Drawers */}
       <AlertsModal
         isOpen={isAlertsOpen}
         onClose={() => setIsAlertsOpen(false)}
@@ -281,6 +409,28 @@ export default function Home() {
         onRemoveAlert={handleRemoveAlert}
         products={PRODUCTS}
         currency={currency}
+      />
+
+      <CompareModal
+        isOpen={isCompareOpen}
+        onClose={() => setIsCompareOpen(false)}
+        products={PRODUCTS}
+        currentProduct={selectedProduct}
+        currency={currency}
+        onSelectProduct={(p) => setSelectedProduct(p)}
+      />
+
+      <PortfolioDrawer
+        isOpen={isPortfoliosOpen}
+        onClose={() => setIsPortfoliosOpen(false)}
+        portfolios={portfolios}
+        activePortfolioId={activePortfolioId}
+        onSelectPortfolio={setActivePortfolioId}
+        onCreatePortfolio={handleCreatePortfolio}
+        onRemoveItemFromPortfolio={handleRemoveItemFromPortfolio}
+        products={PRODUCTS}
+        currency={currency}
+        onSelectProduct={(p) => setSelectedProduct(p)}
       />
 
       {/* Footer */}

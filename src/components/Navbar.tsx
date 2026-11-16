@@ -2,15 +2,15 @@
 
 import React from 'react';
 import { CURRENCY_NAMES } from '@/lib/currency';
-import { Product, PriceAlert, Currency } from '@/types';
+import { Product, PriceAlert, Currency, WatchlistPortfolio } from '@/types';
 import {
   TrendingDown,
   Search,
   Bell,
-  SlidersHorizontal,
   Code2,
-  Globe,
   Radio,
+  Swords,
+  FolderHeart,
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -20,6 +20,9 @@ interface NavbarProps {
   onSelectProduct: (p: Product) => void;
   alerts: PriceAlert[];
   onOpenAlerts: () => void;
+  onOpenCompare: () => void;
+  onOpenPortfolios: () => void;
+  portfolioCount: number;
 }
 
 export default function Navbar({
@@ -29,6 +32,9 @@ export default function Navbar({
   onSelectProduct,
   alerts,
   onOpenAlerts,
+  onOpenCompare,
+  onOpenPortfolios,
+  portfolioCount,
 }: NavbarProps) {
   const [searchQuery, setSearchQuery] = React.useState('');
   const [showSearchResults, setShowSearchResults] = React.useState(false);
@@ -58,7 +64,7 @@ export default function Navbar({
                 TPIR<span className="text-blue-500">.TERMINAL</span>
               </span>
               <span className="px-1.5 py-0.2 rounded text-[10px] font-mono font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                v0.1-PRO
+                v0.2-PRO
               </span>
             </div>
             <div className="text-[10px] text-slate-400 font-mono hidden sm:block">
@@ -108,20 +114,37 @@ export default function Navbar({
           )}
         </div>
 
-        {/* Right Tools: Currency Selector, Alerts, Github */}
-        <div className="flex items-center gap-3">
-          {/* Live Market Feed Badge */}
-          <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-900 border border-slate-800 text-[11px] font-mono text-slate-400">
-            <Radio className="w-3 h-3 text-emerald-400 animate-pulse" />
-            <span>SE / EU / US Feeds</span>
-          </div>
+        {/* Right Tools: Compare, Portfolios, Currency, Alerts, Github */}
+        <div className="flex items-center gap-2.5">
+          {/* Compare Arena Button */}
+          <button
+            onClick={onOpenCompare}
+            className="px-3 py-1.5 rounded-lg bg-blue-600/10 hover:bg-blue-600/20 border border-blue-500/30 text-blue-400 text-xs font-mono font-semibold flex items-center gap-1.5 transition-colors"
+            title="Compare Hardware Arena"
+          >
+            <Swords className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Compare</span>
+          </button>
+
+          {/* Portfolios / Lists Button */}
+          <button
+            onClick={onOpenPortfolios}
+            className="px-3 py-1.5 rounded-lg bg-indigo-600/10 hover:bg-indigo-600/20 border border-indigo-500/30 text-indigo-400 text-xs font-mono font-semibold flex items-center gap-1.5 transition-colors"
+            title="Portfolios & Build Lists"
+          >
+            <FolderHeart className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Portfolios</span>
+            <span className="text-[10px] px-1 rounded bg-indigo-900/60 text-indigo-200 font-bold">
+              {portfolioCount}
+            </span>
+          </button>
 
           {/* Multi-Currency Switcher (SEK / EUR / USD) */}
           <div className="flex items-center bg-slate-900 border border-slate-700/80 rounded-lg p-0.5">
             <button
               onClick={() => onCurrencyChange('SEK')}
               title="Swedish Krona (SEK)"
-              className={`px-2.5 py-1 text-xs font-mono font-bold rounded-md transition-all ${
+              className={`px-2 py-1 text-xs font-mono font-bold rounded-md transition-all ${
                 currency === 'SEK'
                   ? 'bg-blue-600 text-white shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
@@ -132,7 +155,7 @@ export default function Navbar({
             <button
               onClick={() => onCurrencyChange('EUR')}
               title="Euro (EUR)"
-              className={`px-2.5 py-1 text-xs font-mono font-bold rounded-md transition-all ${
+              className={`px-2 py-1 text-xs font-mono font-bold rounded-md transition-all ${
                 currency === 'EUR'
                   ? 'bg-blue-600 text-white shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
@@ -143,7 +166,7 @@ export default function Navbar({
             <button
               onClick={() => onCurrencyChange('USD')}
               title="US Dollar (USD)"
-              className={`px-2.5 py-1 text-xs font-mono font-bold rounded-md transition-all ${
+              className={`px-2 py-1 text-xs font-mono font-bold rounded-md transition-all ${
                 currency === 'USD'
                   ? 'bg-blue-600 text-white shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
